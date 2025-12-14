@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>浪漫圣诞树 · 给你的一封小情书</title>
+  <meta name="description" content="浪漫的圣诞树代码，发给你爱的人。手机打开即可看到动态灯光、飘雪和爱的留言。">
+  <style>
+    :root{
+      --bg:#0b1020;
+      --tree:#0f3d2e;
+      --tree2:#135c3a;
+      --gold:#ffd86b;
+      --red:#ff6575;
+      --pink:#ff8fb3;
+      --white:#ffffff;
+      --glow:#ffeaa7;
+      --accent:#7dd3fc;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:radial-gradient(1200px at 50% -200px,#111a35 0%,#0b1020 55%,#060a14 100%);color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,system-ui;overflow:hidden}
+    .app{
+      position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+    }
+    header{
+      width:100%;padding:18px 16px 10px;text-align:center;line-height:1.4;
+    }
+    .title{
+      font-weight:700;font-size:20px;letter-spacing:0.5px;
+      background:linear-gradient(90deg,#fff,#ffeaa7,#ff8fb3);
+      -webkit-background-clip:text;background-clip:text;color:transparent;
+      filter:drop-shadow(0 0 6px rgba(255,234,167,.25));
+    }
+    .subtitle{font-size:13px;color:#cfe8ff;opacity:.9;margin-top:4px}
+    .canvas-wrap{
+      position:relative;width:100%;max-width:480px;aspect-ratio:9/16;
+      margin:8px auto;border-radius:18px;overflow:hidden;
+      box-shadow:0 12px 40px rgba(0,0,0,.45), inset 0 0 80px rgba(255,255,255,.03);
+      background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
+    }
+    canvas{position:absolute;inset:0;width:100%;height:100%}
+    .message-card{
+      position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+      width:min(92%,440px);background:rgba(15,20,38,.6);backdrop-filter:blur(8px);
+      border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:10px 12px;
+      display:flex;gap:8px;align-items:center;
+    }
+    .input{
+      flex:1;min-width:0;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
+      border-radius:10px;padding:10px 12px;color:#fff;font-size:14px;outline:none;
+    }
+    .btn{
+      background:linear-gradient(135deg,#ff8fb3,#ffd86b);
+      color:#1b0e1b;border:none;border-radius:10px;padding:10px 14px;font-weight:700;font-size:14px;
+      box-shadow:0 6px 16px rgba(255,143,179,.35);cursor:pointer;white-space:nowrap;
+    }
+    .share{
+      position:absolute;top:12px;right:12px;font-size:12px;color:#bfe4ff;opacity:.8
+    }
+    .toast{
+      position:fixed;left:50%;bottom:8%;transform:translateX(-50%);
+      background:rgba(0,0,0,.6);color:#fff;padding:8px 12px;border-radius:10px;
+      font-size:13px;opacity:0;pointer-events:none;transition:.25s ease;
+    }
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+    footer{padding:8px 16px;text-align:center;font-size:12px;color:#a7c9ff;opacity:.7}
+    /* small hearts floating near the card */
+    .heart{
+      position:absolute;width:16px;height:16px;transform:translate(-50%,-50%);
+      filter:drop-shadow(0 0 6px rgba(255,143,179,.6));
+    }
+    .heart:before,.heart:after{
+      content:"";position:absolute;width:8px;height:12px;background:var(--pink);
+      border-radius:8px 8px 0 0;left:4px;top:2px;transform:rotate(-45deg);
+    }
+    .heart:after{
+      left:0;transform:rotate(45deg);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="title">圣诞树上的小心愿</div>
+      <div class="subtitle">灯光在闪，雪在飘，把你的话放在树心里吧</div>
+    </header>
+
+    <div class="canvas-wrap">
+      <canvas id="stage" aria-label="Christmas Tree"></canvas>
+      <div class="message-card">
+        <input id="msg" class="input" maxlength="60" placeholder="写下一句送给TA的话（最多60字）" />
+        <button class="btn" id="apply">放到树上</button>
+      </div>
+      <div class="share">长按可保存或分享</div>
+      <div id="toast" class="toast">已更新到树心</div>
+    </div>
+
+    <footer>Made with love • 祝你圣诞有光、心愿有你</footer>
+  </div>
+
+  <script>
+  ;(function(){
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d', { alpha: true });
+    let W = 360, H = 640;
+    function fit(){
+      const rect = canvas.parentElement.getBoundingClientRect();
+      W = Math.floor(rect.width);
+      H = Math.floor(rect.height);
+      canvas.width = W * devicePixelRatio;
+      canvas.height = H * devicePixelRatio;
+      canvas.style.width = W+'px'; canvas.style.height = H+'px';
+      ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+    }
+    fit(); addEventListener('resize', fit);
+
+    // Snow particles
+    const snows = Array.from({length: 140}, ()=>({
+      x: Math.random()*W,
+      y: Math.random()*H,
+      r: Math.random()*1.8+0.6,
+      v: Math.random()*0.5+0.3,
+      sway: Math.random()*0.6+0.2,
+      phase: Math.random()*Math.PI*2
+    }));
+
+    // Tree lights ornaments
+    const lights = [];
+    // Build tree geometry points
+    function treePath(yBase){
+      const pts = [];
+      const layers = 8;
+      for(let i=0;i<layers;i++){
+        const t = i/(layers-1);
+        const y = yBase - t*(H*0.5);
+        const width = (1 - Math.pow(t,1.2)) * (W*0.42) + 14;
+        pts.push({y, w: width});
+      }
+      return pts;
+    }
+    let treeBaseY = H*0.78;
+    const tree = treePath(treeBaseY);
+
+    // Precompute lights across layers
+    for(const seg of tree){
+      const count = Math.max(4, Math.floor(seg.w/26));
+      for(let i=0;i<count;i++){
+        const x = W/2 - seg.w/2 + (i/(count-1))*seg.w + (Math.random()*6-3);
+        const hue = 40 + Math.random()*290; // gold, red, blue-ish
+        const size = Math.random()*2 + 1.5;
+        const twinkle = Math.random()*0.6 + 0.4;
+        lights.push({x, y: seg.y + (Math.random()*8-4), hue, size, twinkle, phase: Math.random()*Math.PI*2});
+      }
+    }
+
+    // Garland spiral
+    const garlands = [];
+    for(let i=0;i<180;i++){
+      const t = i/180;
+      const segIndex = Math.floor(t * (tree.length-1));
+      const seg = tree[segIndex];
+      const x = W/2 + Math.sin(t*8)*seg.w*0.45;
+      const y = seg.y + Math.cos(t*8)*6;
+      garlands.push({x,y,alpha:0.08});
+    }
+
+    // Star on top
+    const star = { x: W/2, y: tree[tree.length-1].y - 18, r: 10 };
+
+    // Message heart position
+    let message = 'Merry Christmas';
+    const heartPos = { x: W/2, y: tree[3].y + 10 };
+
+    // Snow draw
+    function drawSnow(dt){
+      for(const s of snows){
+        s.phase += dt * 0.5;
+        s.y += s.v * (1 + Math.sin(s.phase)*0.05);
+        s.x += Math.sin(s.phase)*s.sway;
+        if(s.y > H+10){ s.y = -10; s.x = Math.random()*W; }
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,.8)';
+        ctx.fill();
+      }
+    }
+
+    // Tree draw
+    function drawTree(){
+      // trunk
+      ctx.fillStyle = '#3a2b22';
+      ctx.fillRect(W/2-8, treeBaseY+14, 16, 32);
+
+      // branches layers
+      for(let i=0;i<tree.length;i++){
+        const seg = tree[i];
+        const grad = ctx.createLinearGradient(W/2, seg.y-12, W/2, seg.y+18);
+        grad.addColorStop(0, 'rgba(19,92,58,.95)');
+        grad.addColorStop(1, 'rgba(15,61,46,.95)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(W/2 - seg.w/2, seg.y+16);
+        ctx.lineTo(W/2, seg.y-16);
+        ctx.lineTo(W/2 + seg.w/2, seg.y+16);
+        ctx.closePath();
+        ctx.fill();
+
+        // soft edge glow
+        ctx.strokeStyle = 'rgba(255,234,167,.08)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      // garlands
+      ctx.strokeStyle = 'rgba(255,216,107,.25)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      for(const g of garlands){ ctx.lineTo(g.x,g.y); }
+      ctx.stroke();
+
+      // lights
+      for(const l of lights){
+        const glow = ctx.createRadialGradient(l.x,l.y,0,l.x,l.y,8);
+        glow.addColorStop(0, `hsla(${l.hue},90%,70%,.7)`);
+        glow.addColorStop(1, `hsla(${l.hue},90%,70%,0)`);
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(l.x,l.y,8,0,Math.PI*2); ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(l.x, l.y, l.size, 0, Math.PI*2);
+        ctx.fillStyle = `hsla(${l.hue},95%,70%,.95)`;
+        ctx.fill();
+      }
+
+      // star
+      drawStar(star.x, star.y, 5, star.r, star.r*0.48);
+    }
+
+    function drawStar(cx, cy, spikes, outerR, innerR){
+      let rot = Math.PI/2 * 3;
+      let x = cx, y = cy;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - outerR);
+      for (let i = 0; i < spikes; i++) {
+        x = cx + Math.cos(rot) * outerR;
+        y = cy + Math.sin(rot) * outerR;
+        ctx.lineTo(x, y);
+        rot += Math.PI / spikes;
+
+        x = cx + Math.cos(rot) * innerR;
+        y = cy + Math.sin(rot) * innerR;
+        ctx.lineTo(x, y);
+        rot += Math.PI / spikes;
+      }
+      ctx.lineTo(cx, cy - outerR);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255,216,107,.95)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,234,167,.6)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // star glow
+      const glow = ctx.createRadialGradient(cx,cy,0,cx,cy,18);
+      glow.addColorStop(0,'rgba(255,234,167,.55)');
+      glow.addColorStop(1,'rgba(255,234,167,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(cx,cy,18,0,Math.PI*2);
+      ctx.fill();
+    }
+
+    // Message heart bubble
+    function drawHeartMessage(text){
+      // heart glow behind text
+      const g = ctx.createRadialGradient(heartPos.x,heartPos.y,0,heartPos.x,heartPos.y,48);
+      g.addColorStop(0,'rgba(255,143,179,.35)');
+      g.addColorStop(1,'rgba(255,143,179,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(heartPos.x,heartPos.y,48,0,Math.PI*2); ctx.fill();
+
+      // heart shape
+      ctx.save();
+      ctx.translate(heartPos.x, heartPos.y);
+      ctx.scale(1.05,1.05);
+      ctx.beginPath();
+      const r = 16;
+      ctx.moveTo(0, r);
+      ctx.bezierCurveTo(0, r-10, -18, -8, -4, -16);
+      ctx.bezierCurveTo(6, -22, 16, -10, 0, r);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255,101,117,.95)';
+      ctx.fill();
+      ctx.restore();
+
+      // text
+      ctx.font = '600 14px "Segoe UI", Helvetica, Arial';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      wrapText(text, heartPos.x, heartPos.y+32, Math.min(W*0.7, 280), 18);
+    }
+
+    function wrapText(text, x, y, maxWidth, lineHeight){
+      const words = text.trim().split(/\s+/);
+      let line = '';
+      const lines = [];
+      for(let i=0;i<words.length;i++){
+        const test = line ? line+' '+words[i] : words[i];
+        const w = ctx.measureText(test).width;
+        if(w > maxWidth && i>0){ lines.push(line); line = words[i]; }
+        else{ line = test; }
+      }
+      lines.push(line);
+      const startY = y - (lines.length-1)*lineHeight/2;
+      lines.forEach((ln, idx)=> ctx.fillText(ln, x, startY + idx*lineHeight));
+    }
+
+    // Animation loop
+    let last = performance.now();
+    function tick(now){
+      const dt = Math.min(0.033, (now-last)/1000);
+      last = now;
+      ctx.clearRect(0,0,W,H);
+
+      // snow
+      drawSnow(dt);
+
+      // twinkle update
+      for(const l of lights){
+        l.phase += dt * 3;
+        l.size = 1.3 + (Math.sin(l.phase)*0.5 + 0.5) * 2.0 * l.twinkle;
+      }
+
+      // tree and message
+      drawTree();
+      drawHeartMessage(message);
+
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    // UI events
+    const input = document.getElementById('msg');
+    const btn = document.getElementById('apply');
+    const toast = document.getElementById('toast');
+
+    // preload default message from URL (for sharing)
+    const params = new URLSearchParams(location.search);
+    if(params.get('m')){
+      try{
+        message = decodeURIComponent(params.get('m'));
+        input.value = message;
+      }catch(e){}
+    }
+
+    btn.addEventListener('click', ()=>{
+      const v = input.value.trim();
+      if(v){
+        message = v;
+        showToast('已更新到树心');
+        // Update URL for sharing (no reload)
+        const url = new URL(location.href);
+        url.searchParams.set('m', encodeURIComponent(v));
+        history.replaceState({},'', url.toString());
+      }else{
+        showToast('写点想说的话吧');
+      }
+    });
+
+    function showToast(text){
+      toast.textContent = text;
+      toast.classList.add('show');
+      setTimeout(()=>toast.classList.remove('show'), 1400);
+    }
+
+    // Long press to save hint (no permission API needed)
+    let pressTimer = 0;
+    canvas.addEventListener('touchstart', ()=>{ pressTimer = Date.now(); });
+    canvas.addEventListener('touchend', ()=>{
+      if(Date.now()-pressTimer>520){
+        showToast('可截图保存或分享给TA');
+      }
+    });
+
+    // Handle orientation changes smoothly
+    addEventListener('orientationchange', ()=> setTimeout(fit, 250));
+  })();
+  </script>
+</body>
+</html>
